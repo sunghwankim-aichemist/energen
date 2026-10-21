@@ -1,0 +1,23 @@
+const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
+const elements={};const get=s=>elements[s]??=(s==='#modal'?{innerHTML:'',open:false,showModal(){this.open=true},close(){this.open=false}}:{innerHTML:'',textContent:'',style:{},value:''});
+const ctx=vm.createContext({document:{querySelector:get,title:''},window:{scrollTo(){}},localStorage:{getItem(){return null},setItem(){}},structuredClone,Date,console,setTimeout(){return 1},clearTimeout(){},FormData:class{constructor(f){this.f=f}get(k){return this.f[k]}},URL,Blob});
+vm.runInContext(fs.readFileSync('app.js','utf8'),ctx);
+function run(code){return vm.runInContext(code,ctx)}
+for(const p of ['dashboard','projects','knowledge','production','approval','documents','meetings','as','performance'])run(`go('${p}')`);
+assert.ok(get('#app').innerHTML.includes('성과·운영 관리'));
+run(`createProject({preventDefault(){},target:{name:'시험 프로젝트',type:'디젤발전기',capacity:'500',due:'2026-11-30',owner:'기술팀'}})`);
+const id=run('state.projects[0].id');
+run(`saveDraft({preventDefault(){},target:{project:'${id}',type:'작업지시서',notes:'시험 기록'}})`);
+const doc=run('state.docs[0].id');get('#docbody').value='시험 검토 문서';run(`submitDoc('${doc}')`);assert.equal(run('state.docs[0].status'),'검토 대기');
+get('#reason').value='체결 기준 보완';run(`decision('${doc}',false)`);assert.equal(run('state.docs[0].status'),'보완 요청');
+get('#docbody').value='체결 기준 확인 완료';run(`submitDoc('${doc}')`);get('#reason').value='검토 완료';run(`decision('${doc}',true)`);assert.equal(run('state.projects[0].stage'),'생산 진행');
+for(let i=0;i<6;i++)run(`completeStep('${id}')`);assert.equal(run('state.projects[0].stage'),'검사 대기');
+run(`saveInspection({preventDefault(){},target:{result:'부적합',note:'배선 보완 필요'}},'${id}')`);assert.equal(run('state.projects[0].stage'),'보완·재작업');
+run(`saveInspection({preventDefault(){},target:{result:'적합',note:'배선 보완 후 재검사 확인'}},'${id}')`);assert.equal(run('state.projects[0].stage'),'완료');
+run(`revise('${doc}')`);assert.equal(run('state.docs[0].version'),2);assert.equal(run('state.docs[1].status'),'승인 완료');
+run(`ask('본네트형과 엔크로저형 옵션 비교')`);assert.equal(run('messages.at(-1).source'),'catalog');run(`ask('근거 없는 임의 질문')`);assert.ok(run('messages.at(-1).text').includes('확인 불가'));
+run(`createAS({preventDefault(){},target:{site:'시험 현장',model:'500 kW',issue:'시험 접수'}})`);const as=run('state.as[0].id');run(`updateAS({preventDefault(){},target:{status:'처리 완료',result:'확인 완료'}},'${as}')`);assert.equal(run('state.as[0].status'),'처리 완료');
+run(`createMeeting({preventDefault(){},target:{title:'시험 회의',owner:'시험 담당자',project:'${id}',notes:'논의',actions:'후속 조치'}})`);get('#meetingbody').value='검토 완료';run(`updateMeeting(state.meetings[0].id,true)`);assert.equal(run('state.meetings[0].status'),'확정');
+assert.equal(run(`esc('<script>')`),'&lt;script&gt;');
+for(const asset of ['index.html','style.css','app.js','workflow.png','catalog-excerpt.pdf','catalog-page.jpg'])assert.ok(fs.statSync(asset).size>0);
+console.log('PASS: 9 screens, project creation, draft, rework, approval, 6 production steps, failed/pass inspection, immutable approved revision, source response, unknown response, AS completion, meeting confirmation, output escaping, reference assets.');
